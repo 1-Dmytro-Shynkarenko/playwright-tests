@@ -1,4 +1,5 @@
 name: Playwright Tests
+
 on:
   push:
     branches: [main, master]
@@ -6,12 +7,19 @@ on:
     branches: [main, master]
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
 
 jobs:
   test:
     timeout-minutes: 60
     runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -43,7 +51,10 @@ jobs:
 
       - name: Generate Allure Report
         if: always()
-        run: npx allure generate allure-results --clean -o allure-report
+        run: |
+          if [ -d "allure-results" ]; then
+            npx allure generate allure-results --clean -o allure-report
+          fi
 
       - name: Upload Playwright Report
         uses: actions/upload-artifact@v4
@@ -53,16 +64,24 @@ jobs:
           path: playwright-report/
           retention-days: 30
 
-      - name: Remove large files from Allure report
-        if: always()
-        run: find allure-report -size +50M -delete 2>/dev/null || true
+      # =========================
+      # GitHub Pages (Deployments UI)
+      # =========================
 
-      - name: Deploy Allure Report to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Setup Pages
         if: always()
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        if: always()
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: allure-report
+          path: allure-report
+
+      - name: Deploy to GitHub Pages
+        if: github.ref == 'refs/heads/main'
+        id: deployment
+        uses: actions/deploy-pages@v4
 
       - name: Add Allure Report link to summary
         if: always()
@@ -71,6 +90,7 @@ jobs:
           OWNER="${{ github.repository_owner }}"
           REPO_NAME="${REPO#*/}"
           URL="https://${OWNER}.github.io/${REPO_NAME}/"
+
           echo "## Allure Report" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "[View Allure Report](${URL})" >> $GITHUB_STEP_SUMMARY
